@@ -1,0 +1,103 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Qwen API",
+    "description": "Base64 flow:\n1) POST /file-to-base64\n2) POST /file-qa-base64\n\nAlso: /generate (tools), /file-qa-form\nUse :8000. See README.md",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "file_base64", "value": "" },
+    { "key": "filename", "value": "document.pdf" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/health"
+      }
+    },
+    {
+      "name": "Generate - text only",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"max_tokens\": 256,\n  \"messages\": [{ \"role\": \"user\", \"content\": \"What is 2 + 2?\" }],\n  \"tools\": false\n}"
+        },
+        "url": "{{base_url}}/api/v1/generate"
+      }
+    },
+    {
+      "name": "Generate - with your Anthropic tools",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"qwen-local\",\n  \"max_tokens\": 512,\n  \"system\": \"You are an insurance assistant.\",\n  \"messages\": [{ \"role\": \"user\", \"content\": \"look up policy DH123456\" }],\n  \"temperature\": 0.3,\n  \"tools\": [\n    {\n      \"name\": \"policy_search\",\n      \"description\": \"Search policy by policy number\",\n      \"input_schema\": {\n        \"type\": \"object\",\n        \"properties\": { \"policy_number\": { \"type\": \"string\" } },\n        \"required\": [\"policy_number\"]\n      }\n    }\n  ]\n}"
+        },
+        "url": "{{base_url}}/api/v1/generate",
+        "description": "Pass tools as a LIST (not tools:true)."
+      }
+    },
+    {
+      "name": "1) File to Base64",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  const j = pm.response.json();",
+              "  pm.collectionVariables.set('file_base64', j.file_base64);",
+              "  pm.collectionVariables.set('filename', j.filename);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [{ "key": "file", "type": "file", "src": "" }]
+        },
+        "url": "{{base_url}}/api/v1/file-to-base64"
+      }
+    },
+    {
+      "name": "2) File Q&A - Base64 JSON",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"filename\": \"{{filename}}\",\n  \"file_base64\": \"{{file_base64}}\",\n  \"question\": \"Find Size of Order or Order Value. Return ONLY JSON with order_value_inr, order_value_cr, tax_included, currency, source_text, source_page, confidence.\",\n  \"max_tokens\": 256\n}"
+        },
+        "url": "{{base_url}}/api/v1/file-qa-base64"
+      }
+    },
+    {
+      "name": "File Q&A form (one step)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": "" },
+            { "key": "question", "type": "text", "value": "Summarize in 3 bullets." },
+            { "key": "max_tokens", "type": "text", "value": "256" }
+          ]
+        },
+        "url": "{{base_url}}/api/v1/file-qa-form"
+      }
+    }
+  ]
+}

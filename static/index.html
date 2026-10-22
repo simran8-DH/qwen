@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Qwen File Q&A</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --ink: #1a1a1a;
+      --muted: #5c5c5c;
+      --line: #d8d2c4;
+      --accent: #0f4c3a;
+      --accent-soft: #e6f0ec;
+      --danger: #8b1e1e;
+      --card: #fffdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at top left, #efe8d8 0%, transparent 50%),
+        var(--bg);
+      padding: 2rem 1rem 3rem;
+    }
+    .wrap {
+      width: min(720px, 100%);
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 650;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      color: var(--muted);
+      margin: 0 0 1.5rem;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.25rem 1.35rem;
+      box-shadow: 0 10px 30px rgba(40, 30, 10, 0.06);
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin: 0 0 0.4rem;
+    }
+    .field { margin-bottom: 1rem; }
+    input[type="file"],
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 0.7rem 0.8rem;
+      font: inherit;
+      color: inherit;
+    }
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+      line-height: 1.4;
+    }
+    .row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      padding: 0.7rem 1.15rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .status {
+      font-size: 0.9rem;
+      color: var(--muted);
+      min-height: 1.3em;
+    }
+    .status.error { color: var(--danger); }
+    .status.ok { color: var(--accent); }
+    .result {
+      margin-top: 1.25rem;
+      display: none;
+    }
+    .result.show { display: block; }
+    .result h2 {
+      font-size: 1rem;
+      margin: 0 0 0.6rem;
+    }
+    .answer {
+      white-space: pre-wrap;
+      background: var(--accent-soft);
+      border: 1px solid #c5d9d0;
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      line-height: 1.45;
+      font-size: 0.95rem;
+    }
+    .meta {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Qwen File Q&A</h1>
+    <p class="sub">
+      Upload a file and ask a question. The page calls
+      <code>/file-to-base64</code> then <code>/file-qa-base64</code>.
+    </p>
+
+    <div class="panel">
+      <form id="qa-form">
+        <div class="field">
+          <label for="file">File</label>
+          <input id="file" name="file" type="file" required />
+        </div>
+        <div class="field">
+          <label for="question">Question</label>
+          <textarea id="question" name="question" required placeholder="What is the Size of Order?"></textarea>
+        </div>
+        <div class="row">
+          <button id="submit" type="submit">Ask</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+
+      <div class="result" id="result">
+        <h2>Answer</h2>
+        <div class="answer" id="answer"></div>
+        <div class="meta" id="meta"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("qa-form");
+    const fileInput = document.getElementById("file");
+    const questionInput = document.getElementById("question");
+    const submitBtn = document.getElementById("submit");
+    const statusEl = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const answerEl = document.getElementById("answer");
+    const metaEl = document.getElementById("meta");
+
+    function setStatus(text, kind) {
+      statusEl.textContent = text || "";
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const file = fileInput.files && fileInput.files[0];
+      const question = questionInput.value.trim();
+      if (!file || !question) {
+        setStatus("Choose a file and enter a question.", "error");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      resultEl.classList.remove("show");
+      setStatus("1/2 Encoding file (file-to-base64)...");
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const encRes = await fetch("/api/v1/file-to-base64", {
+          method: "POST",
+          body: formData,
+        });
+        const encBody = await encRes.json().catch(() => ({}));
+        if (!encRes.ok) {
+          throw new Error(encBody.detail || "file-to-base64 failed");
+        }
+
+        setStatus("2/2 Asking model (file-qa-base64)... this can take a while on CPU");
+
+        const qaRes = await fetch("/api/v1/file-qa-base64", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: encBody.filename,
+            file_base64: encBody.file_base64,
+            question,
+            max_tokens: 256,
+          }),
+        });
+        const qaBody = await qaRes.json().catch(() => ({}));
+        if (!qaRes.ok) {
+          const detail = typeof qaBody.detail === "string"
+            ? qaBody.detail
+            : JSON.stringify(qaBody.detail || qaBody);
+          throw new Error(detail || "file-qa-base64 failed");
+        }
+
+        answerEl.textContent = qaBody.answer || "(empty answer)";
+        metaEl.textContent = [
+          "file: " + (qaBody.filename || encBody.filename),
+          "type: " + (qaBody.file_type || "?"),
+          "pages: " + (qaBody.pages ?? "—"),
+          "truncated: " + qaBody.truncated,
+          "chars_used: " + qaBody.chars_used,
+        ].join(" · ");
+        resultEl.classList.add("show");
+        setStatus("Done.", "ok");
+      } catch (err) {
+        setStatus(err.message || String(err), "error");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
